@@ -1,4 +1,4 @@
-# nexus
+# Nexus
 
 ### Data Annotator
 Nexus is a Python-based tool for extracting, annotating, and analyzing NIH grant project data. It leverages **Indra** for downloading the NIH data and **Gilda** for entity recognition and annotation of project titles and abstracts, enabling structured insights from large-scale NIH datasets.
