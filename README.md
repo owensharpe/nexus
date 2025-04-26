@@ -4,8 +4,10 @@ Nexus is a Python-based tool for extracting, annotating, and analyzing NIH grant
 
 - Parses and processes NIH grant data from CSV files using Indra
 - Uses Gilda for named entity recognition in project titles and abstracts
-- Outputs annotations in JSONL format for easy processing
+- Creates annotations in JSONL format for easy processing
 - Handles missing data and ensures clean text processing
+- Turns all data into node and edge relationships for Neo4j database
+
 
 ### Phase 1: Data Collection
 
