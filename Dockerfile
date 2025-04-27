@@ -53,9 +53,9 @@ RUN echo "dbms.security.procedures.unrestricted=apoc.*" >> /etc/neo4j/neo4j.conf
 RUN echo "apoc.export.file.enabled=true" >> /etc/neo4j/neo4j.conf
 
 # for coocurrence
-COPY edges.tsv.gz /sw/edges.tsv.gz
-COPY bio_entity_nodes.tsv.gz /sw/bio_entity_nodes.tsv.gz
-COPY research_project_nodes.tsv.gz /sw/research_project_nodes.tsv.gz
+COPY data_preprocessing/prepped_data/edges.tsv.gz /sw/edges.tsv.gz
+COPY data_preprocessing/prepped_data/bio_entity_nodes.tsv.gz /sw/bio_entity_nodes.tsv.gz
+COPY data_preprocessing/prepped_data/research_project_nodes.tsv.gz /sw/research_project_nodes.tsv.gz
 
 # ingest graph content into neo4j
 RUN sed -i 's/#dbms.default_listen_address/dbms.default_listen_address/' /etc/neo4j/neo4j.conf

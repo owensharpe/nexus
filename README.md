@@ -32,7 +32,22 @@ Nexus is a Python-based tool for extracting, annotating, and analyzing NIH grant
 ### Phase 3: Neo4j Database Creation
 `Dockerfile` - builds necessary components for the database.
 
-`startup.sh` - starts the database with bash.
+`startup.sh` - starts the database with shell.
+
+##### Running Database:
+Building Docker Image
+```bash
+ docker build -t nexus-db .
+```
+
+Running Docker Container
+```bash 
+docker run -it --rm -p 7474:7474 -p 7687:7687 --name nexus-neo4j nexus-db
+```
+
+- Run these commands above to access the Neo4j browser.
+- Click the blue 'Connect' button to connect to the database.
+- Run a basic Cypher query, such as ```MATCH p=()-->() RETURN p LIMIT 25;```
 
 
 ### Additional Information For Those Wanting to View NIH RePORTER API:
