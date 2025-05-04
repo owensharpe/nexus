@@ -12,10 +12,7 @@ Nexus is a Python-based tool for extracting, annotating, and analyzing NIH grant
 ### Phase 1: Data Collection
 
 #### Tools Related to Neo4j Data Analysis:
-`__init__.py` - Indra Cogex file with functions to pull data files directly from NIH website.
-
-`__main__.py` - Utilizes `__init__.py` to automate data collection from the NIH website.
-
+`__init__.py` - File with functions to pull data files directly from NIH website. Downloads and saves the data.
 
 #### Tools Related to the NIH RePORTER API:
 `nih_reporter_api.py` - Utilizes tools offered from the NIH RePORTER API by being a class to extract data from the NIH RePORTER database.
