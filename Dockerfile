@@ -53,17 +53,25 @@ RUN echo "dbms.security.procedures.unrestricted=apoc.*" >> /etc/neo4j/neo4j.conf
 RUN echo "apoc.export.file.enabled=true" >> /etc/neo4j/neo4j.conf
 
 # for coocurrence
-COPY data_preprocessing/prepped_data/edges.tsv.gz /sw/edges.tsv.gz
+COPY data_preprocessing/prepped_data/project_entity_edges.tsv.gz /sw/project_entity_edges.tsv.gz
 COPY data_preprocessing/prepped_data/bio_entity_nodes.tsv.gz /sw/bio_entity_nodes.tsv.gz
 COPY data_preprocessing/prepped_data/research_project_nodes.tsv.gz /sw/research_project_nodes.tsv.gz
+COPY data_preprocessing/prepped_data/patent_nodes.tsv.gz /sw/patent_nodes.tsv.gz
+COPY data_preprocessing/prepped_data/clinical_trial_nodes.tsv.gz /sw/clinical_trial_nodes.tsv.gz
+COPY data_preprocessing/prepped_data/publication_nodes.tsv.gz /sw/publication_nodes.tsv.gz
+COPY data_preprocessing/prepped_data/patent_trial_publink_project_edges.tsv.gz /sw/patent_trial_publink_project_edges.tsv.gz
 
 # ingest graph content into neo4j
 RUN sed -i 's/#dbms.default_listen_address/dbms.default_listen_address/' /etc/neo4j/neo4j.conf
 RUN sed -i 's/#dbms.security.auth_enabled/dbms.security.auth_enabled/' /etc/neo4j/neo4j.conf
-RUN neo4j-admin import --delimiter='TAB' --skip-duplicate-nodes=true --skip-bad-relationships=true \
-    --relationships /sw/edges.tsv.gz \
+RUN neo4j-admin import --delimiter='TAB' --multiline-fields=true --skip-duplicate-nodes=true --skip-bad-relationships=true \
+    --relationships /sw/project_entity_edges.tsv.gz \
+    --relationships /sw/patent_trial_publink_project_edges.tsv.gz \
     --nodes /sw/bio_entity_nodes.tsv.gz \
-    --nodes /sw/research_project_nodes.tsv.gz
+    --nodes /sw/research_project_nodes.tsv.gz \
+    --nodes /sw/patent_nodes.tsv.gz  \
+    --nodes /sw/clinical_trial_nodes.tsv.gz \
+    --nodes /sw/publication_nodes.tsv.gz
 
 ENV DOCKERIZED="TRUE"
 ENV NEO4J_URL="bolt://localhost:7687"

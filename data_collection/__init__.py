@@ -1,6 +1,11 @@
 """Adapted from Gyori Lab Indra Cogex (specifically, src/indra_cogex/sources/nih_reporter/__init__.py)
+Title: __init__.py
+Author: Owen Sharpe
+Description: using the NIHReporterDownloader (adapted from the NIHReporterProcessor created by Gyori Lab)
+to extract all files from the NIH Reporter Database
+Data will be pushed to the 'nih_reporter_website_data' folder
 
-Processor for the NIH RePORTER data set.
+Downloader for the NIH RePORTER data set.
 
 NIH RePORTER is available at https://reporter.nih.gov/. Export for bulk
 downloads at: https://reporter.nih.gov/exporter available as zipped csv files per year:
@@ -29,8 +34,8 @@ import zipfile
 from collections import defaultdict
 import pandas
 import pystow
-from indra_cogex.sources.processor import Processor
-from indra_cogex.representation import Node, Relation
+import os
+from pathlib import Path
 
 
 logger = logging.getLogger(__name__)
@@ -56,8 +61,10 @@ fname_regexes = {
 
 base_url = "https://reporter.nih.gov/exporter"
 
+# including abstracts
 download_urls = {
     "project": f"{base_url}/projects/download/%s",
+    "abstract": f"{base_url}/abstracts/download/%s",
     "publink": f"{base_url}/linktables/download/%s",
     "clinical_trial": f"{base_url}/clinicalstudies/download",
     "patent": f"{base_url}/patents/download",
@@ -67,40 +74,45 @@ download_urls = {
 # Project columns to include as node attributes, note that not all columns
 # are included here.
 project_columns = [
-    "ACTIVITY",
-    "ADMINISTERING_IC",
-    "CORE_PROJECT_NUM",
-    "FY",
-    "ORG_NAME",
-    "PI_IDS",
-    "PI_NAMEs",
-    "DIRECT_COST_AMT",
-    "PROJECT_TITLE",
-]
+    'ACTIVITY', 'ADMINISTERING_IC', 'AWARD_NOTICE_DATE',
+    'BUDGET_END', 'BUDGET_START', 'CORE_PROJECT_NUM', 'DIRECT_COST_AMT',
+    'FY', 'ORG_CITY', 'ORG_COUNTRY', 'ORG_DEPT', 'ORG_DISTRICT',
+    'ORG_NAME', 'PI_IDS', 'PI_NAMEs', 'PROJECT_END', 'PROJECT_START',
+    'PROJECT_TITLE', 'TOTAL_COST']
 
 
-class NihReporterProcessor(Processor):
-    """Processor for NIH Reporter database."""
+class NihReporterDownloader():
+    """Downloader for NIH Reporter database."""
 
     name = "nih_reporter"
-    node_types = ["ResearchProject", "Publication", "ClinicalTrial", "Patent"]
 
     def __init__(self, download=True, force_download=False):
-        base_folder = pystow.module("indra", "cogex", "nih_reporter")
+
+        # make the directory for the data
+        project_dir = Path(__file__).resolve().parent.parent
+        base_folder_path = project_dir / "data_collection"
+        base_folder_path.mkdir(parents=True, exist_ok=True)
+
+        # set pystow directory
+        os.environ['PYSTOW_HOME'] = str(base_folder_path)
+
+        # now make directory for data
+        self.base_folder = pystow.module("nih_reporter_website_data")
+
+        # create dictionary for the data files
         data_files = defaultdict(dict)
 
         # Download the data files if they are not present
         if download or force_download:
-            from datetime import datetime
-            last_year = datetime.utcnow().year - 1
+            last_year = datetime.datetime.now().year - 1
             logger.info(
                 "Downloading NIH RePORTER data files %s force redownload..."
                 % ("with" if force_download else "without")
             )
-            download_files(base_folder, force=force_download, last_year=last_year)
+            self.download_files(force=force_download, last_year=last_year)
 
         # Collect all the data files
-        for file_path in base_folder.base.iterdir():
+        for file_path in self.base_folder.base.iterdir():
             for file_type, pattern in fname_regexes.items():
                 match = pattern.match(file_path.name)
                 if match:
@@ -109,168 +121,40 @@ class NihReporterProcessor(Processor):
         self.data_files = dict(data_files)
         self._core_project_applications = defaultdict(list)
 
-    def get_nodes(self) -> Iterable[Node]:
-        # Projects
-        # Avoid duplicates by keeping track of project ids
-        projects = {}
-        for year, project_file in self.data_files.get("project").items():
-            df = _read_first_df(project_file)
-            for _, row in df.iterrows():
-                if not pandas.isna(row["SUBPROJECT_ID"]):
-                    continue
-                data = {}
-                for pc in project_columns:
-                    if pc in row:
-                        if "FY" == pc:
-                            pc_key = "FY:int"
-                        else:
-                            pc_key = pc
-
-                        if pandas.isna(row[pc]):
-                            data[pc_key] = None
-                        else:
-                            data[pc_key] = newline_escape(row[pc])
-                if row.APPLICATION_ID not in projects:
-                    projects[row.APPLICATION_ID] = data
-                else:
-                    projects[row.APPLICATION_ID].update(data)
-                self._core_project_applications[row.CORE_PROJECT_NUM].append(dict(row))
-
-        yield from (
-            Node(
-                db_ns="NIHREPORTER.PROJECT",
-                db_id=app_id,
-                data=data,
-                labels=["ResearchProject"],
-            )
-            for app_id, data in projects.items()
-        )
-
-        # Publications
-        yielded_pubs = set()
-        for year, publink_file in self.data_files.get("publink").items():
-            df = _read_first_df(publink_file)
-            # We're only interested in the PMIDs so iterate over unique values
-            for pmid in df["PMID"].unique():
-                if pmid in yielded_pubs:
-                    yield Node(
-                        db_ns="PUBMED",
-                        db_id=str(pmid),
-                        labels=["Publication"],
+    def download_files(self, force=False, first_year=1985, last_year=2025):
+        current_year = datetime.date.today().year
+        for subset, url_pattern in download_urls.items():
+            # These files are indexed by year
+            if subset in ["project", "publink", "abstract"]:
+                for year in range(first_year, last_year + 1):
+                    url = download_urls[subset] % year
+                    self.base_folder.ensure(
+                        url=url,
+                        name=fname_prefixes[subset] + str(year) + ".zip",
+                        force=force,
                     )
-                    yielded_pubs.add(pmid)
-
-        # Clinical trials
-        for _, clinical_trial_file in self.data_files.get("clinical_trial").items():
-            df = pandas.read_csv(clinical_trial_file)
-            for _, row in df.iterrows():
-                yield Node(
-                    db_ns="CLINICALTRIALS",
-                    db_id=row["ClinicalTrials.gov ID"],
-                    labels=["ClinicalTrial"],
+            # These files are single downloads but RePORTER adds a timestamp
+            # to the file name making it difficult to check if it already exists
+            # so to avoid always redownloading, we take Jan 1st of the current
+            # year as reference.
+            else:
+                timestamp = int(
+                    datetime.datetime(year=current_year, month=1, day=1).timestamp()
                 )
-
-        # Patents
-        patent_ids = set()
-        for _, patent_file in self.data_files.get("patent").items():
-            df = pandas.read_csv(patent_file)
-            # Drop duplicated IDs and iterate over rows
-            for _, row in df.drop_duplicates(subset=["PATENT_ID"]).iterrows():
-                pat_id = row["PATENT_ID"].strip()
-                if pat_id and pat_id not in patent_ids:
-                    yield Node(
-                        db_ns="GOOGLE.PATENT",
-                        db_id="US%s" % row["PATENT_ID"],
-                        data={"name": clean_text(row["PATENT_TITLE"])},
-                        labels=["Patent"],
-                    )
-                    patent_ids.add(pat_id)
-
-    def get_relations(self) -> Iterable[Relation]:
-        # Project publications
-        for year, publink_file in self.data_files.get("publink").items():
-            df = _read_first_df(publink_file)
-            for _, row in df.iterrows():
-                projects = self._core_project_applications.get(
-                    row["PROJECT_NUMBER"], []
-                )
-                for project in projects:
-                    yield Relation(
-                        source_ns="NIHREPORTER.PROJECT",
-                        source_id=project["APPLICATION_ID"],
-                        target_ns="PUBMED",
-                        target_id=str(row.PMID),
-                        rel_type="has_publication",
-                    )
-        # Project clinical trials
-        for _, clinical_trial_file in self.data_files.get("clinical_trial").items():
-            df = pandas.read_csv(clinical_trial_file)
-            for _, row in df.iterrows():
-                projects = self._core_project_applications.get(
-                    row["Core Project Number"], []
-                )
-                for project in projects:
-                    yield Relation(
-                        source_ns="NIHREPORTER.PROJECT",
-                        source_id=project["APPLICATION_ID"],
-                        target_ns="CLINICALTRIALS",
-                        target_id=row["ClinicalTrials.gov ID"],
-                        rel_type="has_clinical_trial",
-                    )
-        # Project patents
-        for _, patent_file in self.data_files.get("patent").items():
-            df = pandas.read_csv(patent_file)
-            for _, row in df.iterrows():
-                projects = self._core_project_applications.get(row["PROJECT_ID"], [])
-                for project in projects:
-                    yield Relation(
-                        source_ns="NIHREPORTER.PROJECT",
-                        source_id=project["APPLICATION_ID"],
-                        target_ns="GOOGLE.PATENT",
-                        target_id="US%s" % row["PATENT_ID"],
-                        rel_type="has_patent",
-                    )
-
-
-def _read_first_df(zip_file_path):
-    """Extract a single CSV file from a zip file given its path."""
-    with zipfile.ZipFile(zip_file_path, "r") as zip_ref:
-        return pandas.read_csv(
-            zip_ref.open(zip_ref.filelist[0], "r"),
-            encoding="latin1",
-            low_memory=False,
-            on_bad_lines="skip",
-        )
-
-
-def download_files(
-    base_folder: pystow.Module, force=False, first_year=1985, last_year=2021
-):
-    current_year = datetime.date.today().year
-    for subset, url_pattern in download_urls.items():
-        # These files are indexed by year
-        if subset in ["project", "publink"]:
-            for year in range(first_year, last_year + 1):
-                url = download_urls[subset] % year
-                base_folder.ensure(
+                url = download_urls[subset]
+                self.base_folder.ensure(
                     url=url,
-                    name=fname_prefixes[subset] + str(year) + ".zip",
+                    name=fname_prefixes[subset] + str(timestamp) + ".csv",
                     force=force,
                 )
-        # These files are single downloads but RePORTER adds a timestamp
-        # to the file name making it difficult to check if it already exists
-        # so to avoid always redownloading, we take Jan 1st of the current
-        # year as reference.
-        else:
-            timestamp = int(
-                datetime.datetime(year=current_year, month=1, day=1).timestamp()
-            )
-            url = download_urls[subset]
-            base_folder.ensure(
-                url=url,
-                name=fname_prefixes[subset] + str(timestamp) + ".csv",
-                force=force,
-            )
+
+    def run(self):
+        """Run the downloader and print summary information."""
+        # summary of downloaded files
+        print(f"NIH Reporter data downloaded to: {self.base_folder.base}")
+        for file_type, files in self.data_files.items():
+            print(f"Downloaded {len(files)} {file_type} file(s)")
+        return 0
 
 
 def clean_text(text: Any) -> Any:
@@ -280,7 +164,6 @@ def clean_text(text: Any) -> Any:
             text.replace("\n", "\\n") \
                 .replace("\r", "\\r") \
                 .replace("'", "\\'").strip()
-
     return text
 
 
@@ -289,3 +172,13 @@ def newline_escape(text: Any) -> Any:
     if isinstance(text, str):
         return text.replace("\n", "\\n")
     return text
+
+
+def main():
+    downloader = NihReporterDownloader()
+    print("Downloading Files from the NIH Exporter...")
+    return downloader.run()
+
+
+if __name__ == "__main__":
+    exit(main())
